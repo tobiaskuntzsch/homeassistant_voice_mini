@@ -51,8 +51,8 @@ sudo apt-get install --no-install-recommends python3-hidapi python3-rpi.gpio pyt
 # Python packages only available via pip
 sudo pip3 install adafruit-circuitpython-neopixel adafruit-blinka wyoming wyoming-satellite --break-system-packages
 
-# Correct HID package for S330 buttons
-sudo pip3 install hidapi --break-system-packages
+# Correct HID package for S330 buttons (python-hid, NOT hidapi)
+sudo pip3 install hid --break-system-packages
 
 
 # Optional audio processing packages

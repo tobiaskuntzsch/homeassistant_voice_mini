@@ -1,9 +1,9 @@
-import hidapi as hid
 import socket
 import os
 import time
 import subprocess
 import re
+import hid  # python-hid package
 
 # USB VID/PID of the Anker PowerConf S330
 VID = 0x291a
