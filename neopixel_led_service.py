@@ -13,14 +13,25 @@ from wyoming.asr import Transcript
 from wyoming.event import Event
 from wyoming.satellite import (
     RunSatellite,
-    SatelliteConnected,
-    SatelliteDisconnected,
     StreamingStarted,
     StreamingStopped,
 )
 from wyoming.server import AsyncEventHandler, AsyncServer
 from wyoming.vad import VoiceStarted
 from wyoming.wake import Detection
+
+# Define these constants to maintain compatibility with the code
+class SatelliteConnected:
+    """Satellite connected event (compatibility class)."""
+    @staticmethod
+    def is_type(event_type: str) -> bool:
+        return "satellite_connected" in event_type.lower()
+
+class SatelliteDisconnected:
+    """Satellite disconnected event (compatibility class)."""
+    @staticmethod
+    def is_type(event_type: str) -> bool:
+        return "satellite_disconnected" in event_type.lower()
 
 _LOGGER = logging.getLogger()
 

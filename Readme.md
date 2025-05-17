@@ -152,7 +152,6 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=pi
 ExecStart=/usr/bin/python3 /home/pi/nabu_mini/neopixel_led_service.py --uri 'tcp://127.0.0.1:10500'
 WorkingDirectory=/home/pi/nabu_mini
 Restart=always
@@ -171,6 +170,8 @@ sudo systemctl start nabu-leds.service
 ```
 
 ## 2. Wake Word Service (Optional)
+
+> **Note:** Alternatively, you can use a central OpenWakeWord service in your network instead of installing it locally. In this case, you only need to adjust the IP address of the central service in the Wyoming Satellite configuration under `--wake-uri` (e.g., `--wake-uri 'tcp://192.168.1.100:10400'`).
 
 ### Setting up Wyoming OpenWakeWord
 
