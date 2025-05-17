@@ -102,15 +102,34 @@ def send_fake_wakeword(wake_word=None, host=WYOMING_WAKE_HOST, port=WYOMING_WAKE
     # Verwende das übergebene Wake-Word oder versuche, es automatisch zu erkennen
     name = wake_word if wake_word else get_wakeword_name()
     
-    header = b"WYOMING"
-    event_name = f"wake  {name}\n".encode("utf-8")
-    length = len(event_name).to_bytes(4, byteorder="big")
-    reserved = b"\x00" * 4
-    packet = header + length + reserved + event_name
+    try:
+        # Wyoming 1.4.1 Format - versuche verschiedene Formate
+        # Format 1: Header + Length + Reserved + "wake" + JSON
+        header = b"WYOMING"
+        # JSON Format für das Wake-Event
+        json_data = f"{{\"name\":\"{name}\"}}"
+        event_name = f"wake\n{json_data}".encode("utf-8")
+        length = len(event_name).to_bytes(4, byteorder="big")
+        reserved = b"\x00" * 4
+        packet = header + length + reserved + event_name
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.sendto(packet, (host, port))
-    logger.info(f"📣 WAKEWORD: Sent fake wake word \"{name}\" to {host}:{port}")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.sendto(packet, (host, port))
+        logger.info(f"📣 WAKEWORD: Sent fake wake word \"{name}\" to {host}:{port}")
+        
+        # Falls das erste Format nicht funktioniert, versuche ein alternatives Format
+        # nach kurzer Verzögerung
+        time.sleep(0.1)
+        
+        # Format 2: Einfacheres Format mit nur "wake Name"
+        event_name2 = f"wake {name}\n".encode("utf-8")
+        length2 = len(event_name2).to_bytes(4, byteorder="big")
+        packet2 = header + length2 + reserved + event_name2
+        sock.sendto(packet2, (host, port))
+        
+    except Exception as e:
+        logger.error(f"Error sending fake wakeword: {e}")
+
 
 def setup_logging(log_level=logging.INFO, log_file=None):
     """Konfiguriert das Logging-System"""
