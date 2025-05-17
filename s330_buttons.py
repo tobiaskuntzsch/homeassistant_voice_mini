@@ -170,27 +170,25 @@ def send_fake_wakeword(wake_word=None, host=WYOMING_WAKE_HOST, port=WYOMING_WAKE
         logger.error(f"Error sending wake word: {e}")
 
 
-def send_wyoming_pipeline(wake_word=None, host="127.0.0.1", port=10700):
-    """Sendet eine vollständige Wyoming-Pipeline-Sequenz direkt an den Wyoming-Satellite Server.
-    Diese Funktion umgeht die Wake-Word-Erkennung und simuliert eine vollständige Pipeline.
+def force_activate_satellite(wake_word=None, host="127.0.0.1", port=10700):
+    """Aktiviert den Wyoming Satellite direkt, ohne Wake-Word-Erkennung (Force Activate).
+    
+    Diese Funktion nutzt die in PR #144 implementierte Funktionalität, die es erlaubt,
+    den Satellite direkt in den ASR-Modus zu versetzen.
     
     Args:
-        wake_word: Optional das zu verwendende Wake-Word
+        wake_word: Optional das zu verwendende Wake-Word (nur für Logs)
         host: Wyoming Server Host
-        port: Wyoming Server Port (standardmäßig 10700, nicht der Wake-Port)
+        port: Wyoming Server Port (standardmäßig 10700)
     """
-    # Name des Wake-Words bestimmen
+    # Name des Wake-Words bestimmen (nur für Logging)
     name = wake_word if wake_word else get_wakeword_name()
     
-    # Stelle sicher, dass der Wakeword-Name die Version enthält
-    if not "_v" in name:
-        name = f"{name}_v0.1"
-    
-    # Aktuelle Wyoming-Version
+    # Wyoming-Version
     wyoming_version = "1.5.4"
     
     try:
-        logger.info(f"Sende Wyoming-Pipeline-Start an {host}:{port}")
+        logger.info(f"Aktiviere Wyoming Satellite direkt (Force Activate) auf {host}:{port}")
         
         # Socket erstellen und verbinden
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -199,60 +197,29 @@ def send_wyoming_pipeline(wake_word=None, host="127.0.0.1", port=10700):
         # WYOMING-Protokoll Header
         protocol_header = b"WYOMING"
         
-        # 1. RunPipeline Event senden
-        logger.debug("Sende RunPipeline-Event")
-        pipeline_config = {
-            "start_stage": "asr", 
-            "end_stage": "tts", 
-            "restart_on_end": False, 
-            "snd_format": {
-                "rate": 16000, 
-                "width": 2, 
-                "channels": 1
-            }
+        # Run-Satellite Kommando mit start_stage=asr senden
+        run_satellite_config = {
+            "type": "run-satellite",
+            "version": wyoming_version,
+            "data_length": 37  # Länge der JSON-Daten
         }
         
-        # RunPipeline
-        send_wyoming_message(sock, protocol_header, {
-            "type": "run-pipeline", 
-            "version": wyoming_version, 
-            "data_length": len(json.dumps(pipeline_config))
-        })
+        # RunSatellite Kommando senden
+        send_wyoming_message(sock, protocol_header, run_satellite_config)
         
-        # Pipeline-Konfiguration
-        send_wyoming_message(sock, protocol_header, pipeline_config)
+        # RunSatellite Daten mit start_stage=asr senden
+        satellite_data = {
+            "start_stage": "asr"
+        }
+        send_wyoming_message(sock, protocol_header, satellite_data)
         
-        # 2. Detection Event senden
-        logger.debug("Sende Detection-Event")
-        timestamp_ns = int(time.time() * 1000000000)
-        detection_data = {"name": name, "timestamp": timestamp_ns}
-        
-        send_wyoming_message(sock, protocol_header, {
-            "type": "detection", 
-            "version": wyoming_version, 
-            "data_length": len(json.dumps(detection_data))
-        })
-        
-        # Detection-Daten
-        send_wyoming_message(sock, protocol_header, detection_data)
-        
-        # 3. Streaming-Started Event senden
-        logger.debug("Sende StreamingStarted-Event")
-        send_wyoming_message(sock, protocol_header, {
-            "type": "streaming-started", 
-            "version": wyoming_version
-        })
-        
-        # Warte kurz, um sicherzustellen, dass alle Events verarbeitet wurden
-        time.sleep(0.1)
-        
-        logger.info(f"Wyoming-Pipeline erfolgreich gesendet für Wake-Word: {name}")
+        logger.info(f"Force Activate erfolgreich gesendet - Satellite sollte jetzt im ASR-Modus sein")
         sock.close()
         
     except ConnectionRefusedError:
         logger.error(f"Verbindung zu {host}:{port} abgelehnt. Läuft der Wyoming-Satellite-Service?")
     except Exception as e:
-        logger.error(f"Fehler beim Senden der Wyoming-Pipeline: {e}")
+        logger.error(f"Fehler beim Force Activate des Satellite: {e}")
 
 def send_wyoming_message(sock, protocol_header, message):
     """Hilfsfunktion zum Senden von Wyoming-Nachrichten"""
@@ -470,8 +437,8 @@ def main():
                                 # Alternativ könnten wir hier XF86AudioLowerVolume-Taste simulieren
                     elif report_id == 2:
                         if payload == 0x03:
-                            logger.info(f"📞 BUTTON: PHONE button pressed (count: {count}) → triggering WakeWord")
-                            send_fake_wakeword(wake_word=wake_word, host=wyoming_host, port=wyoming_port)
+                            logger.info(f"📞 BUTTON: PHONE button pressed (count: {count}) → force activating satellite")
+                            force_activate_satellite(wake_word=wake_word, host=wyoming_host)
                         else:
                             # Log unbekannte Tasten im Report 2
                             logger.info(f"❓ BUTTON: Unknown button (report_id: {report_id}, payload: {payload:02x}, count: {count})")

@@ -230,10 +230,18 @@ sudo systemctl start wyoming-openwake.service
 
 ### Setting up Wyoming Satellite
 
+> **WICHTIG:** Stellen Sie sicher, dass Sie eine Version des Wyoming Satellite verwenden, die die "Force Activate"-Funktionalität unterstützt (PR #144). Diese Funktionalität wurde im März 2024 hinzugefügt und ermöglicht es, den Satellite direkt zu aktivieren, ohne ein Wake-Word zu sprechen.
+
 ```sh
-# Clone the Wyoming Satellite repository
+# Clone the Wyoming Satellite repository (neueste Version mit Force-Activate-Unterstützung))
 git clone https://github.com/rhasspy/wyoming-satellite.git
 cd ~/wyoming-satellite
+
+# Stellen Sie sicher, dass Sie die neueste Version haben
+git pull
+
+# Überprüfen Sie, ob PR #144 enthalten ist (sollte "Support force activated pipelines" in der Log-Ausgabe erscheinen)
+git log --grep="force activated"
 
 # Setup Wyoming Satellite
 script/setup
