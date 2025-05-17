@@ -22,20 +22,61 @@ PID = 0x3308
 WYOMING_WAKE_HOST = "127.0.0.1"
 WYOMING_WAKE_PORT = 10400
 
+def get_available_audio_controls():
+    """Determines available audio controls for volume adjustment"""
+    try:
+        # Versuche zuerst, alle verfügbaren Mixer zu bekommen
+        out = subprocess.check_output(["amixer", "scontrols"], text=True)
+        # Suche nach Mustern wie 'Simple mixer control 'Master',0' oder 'Simple mixer control 'PCM',0'
+        controls = re.findall(r"Simple mixer control '([^']+)',\d+", out)
+        if controls:
+            # Priorisiere Master und PCM als gängige Lautstärkeregler
+            for preferred in ['Master', 'PCM', 'Speaker', 'Headphone']:
+                if preferred in controls:
+                    logger.info(f"Using '{preferred}' audio control for volume adjustment")
+                    return preferred
+            # Falls keiner der bevorzugten gefunden wurde, nimm den ersten verfügbaren
+            logger.info(f"Using '{controls[0]}' audio control for volume adjustment")
+            return controls[0]
+    except Exception as e:
+        logger.error(f"Error finding audio controls: {e}")
+    
+    # Fallback auf Master, wenn nichts gefunden wurde
+    logger.warning("No audio controls found, defaulting to 'Master'")
+    return "Master"
+
 def get_wakeword_name():
     """Reads the configured WakeWord name from the process arguments"""
     try:
-        out = subprocess.check_output(
-            "ps -ef | grep wyoming-satellite | grep -- '--wake-word-name' | head -1",
-            shell=True,
-            text=True
-        )
-        match = re.search(r"--wake-word-name\s+(\S+)", out)
-        if match:
-            return match.group(1)
+        # Erweiterte Suche nach dem Wyoming-Satellite-Prozess
+        commands = [
+            "ps -ef | grep wyoming-satellite | grep -v grep | grep -- '--wake-word-name' | head -1",
+            "ps -ef | grep wyoming-satellite | grep -v grep | head -1",
+            "ps aux | grep wyoming-satellite | grep -v grep | head -1"
+        ]
+        
+        for cmd in commands:
+            try:
+                out = subprocess.check_output(cmd, shell=True, text=True)
+                if out.strip():
+                    # Versuche, den Wake-Word-Namen zu extrahieren
+                    match = re.search(r"--wake-word-name[= ]([\w-]+)", out)
+                    if match:
+                        wake_word = match.group(1)
+                        logger.info(f"Found wake word: {wake_word}")
+                        return wake_word
+                    else:
+                        logger.warning(f"Wyoming-satellite process found but no wake-word-name argument detected")
+            except subprocess.CalledProcessError:
+                continue
+        
+        logger.warning("Could not find Wyoming Satellite process, using default wake word")
     except Exception as e:
         logger.error(f"Error determining Wake Word: {e}")
-    return "jarvis"  # Fallback
+        
+    default_wake_word = "jarvis"    
+    logger.warning(f"Using default wake word: {default_wake_word}")
+    return default_wake_word  # Fallback
 
 def send_fake_wakeword():
     """Sends a WakeWordResult event to the Wyoming Satellite (UDP)"""
@@ -76,6 +117,7 @@ def main():
     parser = argparse.ArgumentParser(description='Anker PowerConf S330 Button Monitor')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     parser.add_argument('--log-file', help='Path to log file')
+    parser.add_argument('--audio-control', help='Audio mixer control to use (e.g., Master, PCM, Speaker)')
     args = parser.parse_args()
     
     # Logging einrichten
@@ -160,6 +202,9 @@ def main():
         logger.error(f"Error setting up HID device: {e}")
         return
 
+    # Bestimme den zu verwendenden Audio-Mixer-Control
+    audio_control = args.audio_control if args.audio_control else get_available_audio_controls()
+    
     # Hauptschleife zum Lesen der Tasten
     try:
         logger.info("Monitoring for button presses...")
@@ -197,10 +242,26 @@ def main():
                     if report_id == 1:
                         if payload == 0x08:
                             logger.info(f"🔊 BUTTON: VOLUME UP pressed (count: {count})")
-                            os.system("amixer sset Master 5%+")
+                            try:
+                                # Verwende den erkannten Audio-Control
+                                cmd = f"amixer sset {audio_control} 5%+"
+                                logger.debug(f"Running command: {cmd}")
+                                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                                if result.returncode != 0:
+                                    logger.warning(f"Volume up command failed: {result.stderr}")
+                            except Exception as e:
+                                logger.error(f"Error adjusting volume up: {e}")
                         elif payload == 0x10:
                             logger.info(f"🔉 BUTTON: VOLUME DOWN pressed (count: {count})")
-                            os.system("amixer sset Master 5%-")
+                            try:
+                                # Verwende den erkannten Audio-Control
+                                cmd = f"amixer sset {audio_control} 5%-"
+                                logger.debug(f"Running command: {cmd}")
+                                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                                if result.returncode != 0:
+                                    logger.warning(f"Volume down command failed: {result.stderr}")
+                            except Exception as e:
+                                logger.error(f"Error adjusting volume down: {e}")
                     elif report_id == 2:
                         if payload == 0x03:
                             logger.info(f"📞 BUTTON: PHONE button pressed (count: {count}) → triggering WakeWord")
