@@ -34,6 +34,7 @@ Raspberry Pi Imager -> Raspberry Pi Zero 2 -> Other -> Raspbian Lite 64-bit
 
 ```sh
 # Clone the homeassistant_voice_mini repository
+sudo apt-get install git -y
 git clone https://github.com/tobiaskuntzsch/homeassistant_voice_mini.git
 cd homeassistant_voice_mini
 ```
@@ -48,8 +49,8 @@ sudo apt-get install --no-install-recommends git python3-dev libopenblas-dev bui
 # Python packages available through apt
 sudo apt-get install --no-install-recommends python3-hidapi python3-rpi.gpio python3-pip -y
 
-# Python packages only available via pip
-sudo pip3 install adafruit-circuitpython-neopixel adafruit-blinka wyoming wyoming-satellite hidapi webrtc-noise-gain pysilero-vad --break-system-packages
+# Python packages for LED control and Wyoming protocol
+sudo pip3 install rpi_ws281x adafruit-circuitpython-neopixel adafruit-blinka wyoming wyoming-satellite hidapi webrtc-noise-gain pysilero-vad --break-system-packages
 ```
 
 ## Scripts in this Repository
@@ -242,6 +243,7 @@ git pull
 
 # Setup Wyoming Satellite
 script/setup
+script/setup --api
 
 # Install additional audio processing packages
 .venv/bin/pip3 install 'pysilero-vad==1.0.0'
@@ -281,7 +283,8 @@ ExecStart=/home/pi/wyoming-satellite/script/run \
   --snd-command-rate 16000 \
   --snd-volume-multiplier 0.2 \
   --awake-wav sounds/awake.wav \
-  --done-wav sounds/done.wav
+  --done-wav sounds/done.wav \
+  --api-uri 'http://127.0.0.1:8080'
 WorkingDirectory=/home/pi/wyoming-satellite
 Restart=always
 RestartSec=1
@@ -298,23 +301,6 @@ sudo systemctl enable wyoming-satellite.service
 sudo systemctl start wyoming-satellite.service
 ```
 
-### Security Configuration
-
-The Wyoming Satellite has been enhanced with security features for the Force Activate functionality. By default, it uses a secure token that must be provided when activating the satellite without a wake word. 
-
-**Important:** For security reasons, you should change the default security token in both files:
-
-1. In Wyoming Satellite: `/home/pi/wyoming-satellite/wyoming_satellite/satellite.py`
-   ```python
-   # Change this password to your own secure token
-   ACTIVATION_PASSWORD = "homeassistant-voice-mini-secure-token"
-   ```
-
-2. In the HomeAssistant Voice Mini Button Service: `/home/pi/homeassistant_voice_mini/s330_buttons.py`
-   ```python
-   # Change this to match the password in the Wyoming Satellite
-   ACTIVATION_PASSWORD = "homeassistant-voice-mini-secure-token"
-   ```
 
 ## 4. Button Service (homeassistant-voice-mini-buttons.service)
 
