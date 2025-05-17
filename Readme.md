@@ -15,13 +15,9 @@ A smart home solution for voice control using Wyoming protocol with Raspberry Pi
 
 ### Wiring Diagram
 
-**Wiring Diagram**
-
-<img src="wire.png" width="400" alt="Wiring Diagram">
-
-**Real Implementation**
-
-<img src="IMG_4441.jpg" width="400" alt="Real Implementation Photo">
+| <img src="wire.png" width="350" height="350"> | <img src="IMG_4441.jpg" width="350" height="350"> |
+|:-------------------------:|:-------------------------:|
+| **Wiring Diagram** | **Real Implementation** |
 
 The wiring diagram shows the connections between components:
 - The WS2812B LED strip connects to the Raspberry Pi Zero 2's GPIO18 pin for data, and to power/ground
@@ -53,10 +49,8 @@ sudo apt-get install --no-install-recommends git python3-dev libopenblas-dev bui
 sudo apt-get install --no-install-recommends python3-hidapi python3-rpi.gpio python3-pip -y
 
 # Python packages only available via pip
-sudo pip3 install adafruit-circuitpython-neopixel adafruit-blinka wyoming wyoming-satellite --break-system-packages
+sudo pip3 install adafruit-circuitpython-neopixel adafruit-blinka wyoming wyoming-satellite hid --break-system-packages
 
-# This installs the Python hid module (required for s330_buttons.py)
-sudo pip3 install hid --break-system-packages
 
 # Optional audio processing packages
 sudo pip3 install webrtc-noise-gain pysilero-vad --break-system-packages
