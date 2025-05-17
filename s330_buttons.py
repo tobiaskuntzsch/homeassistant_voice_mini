@@ -3,7 +3,16 @@ import os
 import time
 import subprocess
 import re
-import hidapi  # Verwende das System-hidapi-Paket
+import logging
+import datetime
+import argparse
+
+# Konfiguriere das Logging
+logger = logging.getLogger("s330_buttons")
+
+# Format: [ZEIT] [LEVEL] [NACHRICHT]
+log_format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', 
+                             datefmt='%Y-%m-%d %H:%M:%S')
 
 # USB VID/PID of the Anker PowerConf S330
 VID = 0x291a
@@ -25,7 +34,7 @@ def get_wakeword_name():
         if match:
             return match.group(1)
     except Exception as e:
-        print("Error determining Wake Word:", e)
+        logger.error(f"Error determining Wake Word: {e}")
     return "jarvis"  # Fallback
 
 def send_fake_wakeword():
@@ -39,64 +48,193 @@ def send_fake_wakeword():
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.sendto(packet, (WYOMING_WAKE_HOST, WYOMING_WAKE_PORT))
-    print(f"📣 Fake WakeWord \"{name}\" sent to {WYOMING_WAKE_HOST}:{WYOMING_WAKE_PORT}")
+    logger.info(f"📣 WAKEWORD: Sent fake wake word \"{name}\" to {WYOMING_WAKE_HOST}:{WYOMING_WAKE_PORT}")
+
+def setup_logging(log_level=logging.INFO, log_file=None):
+    """Konfiguriert das Logging-System"""
+    # Root-Logger konfigurieren
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    
+    # Console-Handler
+    console = logging.StreamHandler()
+    console.setLevel(log_level)
+    console.setFormatter(log_format)
+    root_logger.addHandler(console)
+    
+    # Datei-Handler, falls eine Log-Datei angegeben wurde
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(log_format)
+        root_logger.addHandler(file_handler)
+    
+    return root_logger
 
 def main():
-    print("Starting button monitoring for Anker PowerConf S330...")
-
-    # Enumerate HID devices to find our Anker S330
-    found = False
+    # Kommandozeilenargumente parsen
+    parser = argparse.ArgumentParser(description='Anker PowerConf S330 Button Monitor')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
+    parser.add_argument('--log-file', help='Path to log file')
+    args = parser.parse_args()
+    
+    # Logging einrichten
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    setup_logging(log_level, args.log_file)
+    
+    logger.info("Starting button monitoring for Anker PowerConf S330...")
+    
+    # Versuche zuerst, das hidapi-Modul zu importieren
     try:
-        for device_dict in hidapi.enumerate():
-            if device_dict['vendor_id'] == VID and device_dict['product_id'] == PID:
-                found = True
-                print(f"Found Anker S330 device: {device_dict['product_string']}")
-                break
-        
-        if not found:
-            print(f"Anker S330 device not found (VID: {hex(VID)}, PID: {hex(PID)})")
+        import hidapi
+        logger.info("Using hidapi module")
+        using_hid = False
+    except ImportError:
+        # Wenn hidapi nicht verfügbar ist, verwende hid
+        try:
+            import hid
+            logger.info("Using hid module")
+            using_hid = True
+        except ImportError:
+            logger.error("Neither 'hidapi' nor 'hid' module found. Please install one of them.")
+            logger.error("  sudo pip3 install hidapi --break-system-packages")
             return
-        
-        # Open the device
-        h = hidapi.Device(vendor_id=VID, product_id=PID)
-        print("Device opened successfully")
-        
+
+    # Anker S330 finden und öffnen
+    device = None
+    
+    try:
+        if using_hid:
+            # Alte Methode mit hid-Paket
+            device = hid.device()
+            device.open(VID, PID)
+            device.set_nonblocking(True)
+            logger.info("Device opened with hid module")
+        else:
+            # Neue Methode mit hidapi-Paket
+            found = False
+            logger.info(f"Searching for Anker S330 device (VID: {hex(VID)}, PID: {hex(PID)})")
+            for info in hidapi.enumerate():
+                try:
+                    # Versuche, die Vendor- und Produkt-ID zu bekommen
+                    v_id = getattr(info, 'vendor_id', None)
+                    p_id = getattr(info, 'product_id', None)
+                    
+                    if v_id is None and hasattr(info, 'get') and callable(info.get):
+                        # Versuch, die IDs via dictionary-like interface zu bekommen
+                        v_id = info.get('vendor_id')
+                        p_id = info.get('product_id')
+                    
+                    # Wenn wir im Debug-Modus sind, zeige alle gefundenen Geräte an
+                    if args.debug:
+                        logger.debug(f"Found HID device: {v_id=:04x}, {p_id=:04x}")
+                    
+                    if v_id == VID and p_id == PID:
+                        found = True
+                        path = getattr(info, 'path', None)
+                        logger.info(f"Found Anker S330 device")
+                        break
+                except Exception as e:
+                    logger.error(f"Error accessing device info: {e}")
+                    continue
+                    
+            if not found:
+                logger.error(f"Anker S330 device not found (VID: {hex(VID)}, PID: {hex(PID)})")
+                return
+                
+            # Versuche, das Gerät zu öffnen
+            try:
+                device = hidapi.Device(vendor_id=VID, product_id=PID)
+                logger.info("Device opened via vendor/product ID")
+            except Exception as e:
+                logger.warning(f"Error opening by ID: {e}")
+                if path:
+                    try:
+                        device = hidapi.Device(path=path)
+                        logger.info("Device opened via path")
+                    except Exception as e:
+                        raise Exception(f"Failed to open device via path: {e}")
+                else:
+                    raise Exception("No path available for device")
     except Exception as e:
-        print("Error setting up HID device:", e)
+        logger.error(f"Error setting up HID device: {e}")
         return
 
+    # Hauptschleife zum Lesen der Tasten
     try:
+        logger.info("Monitoring for button presses...")
+        button_count = {}
         while True:
             try:
-                # Read data with timeout
-                data = h.read(64, timeout_ms=100)
-                
+                # Lese Daten vom Gerät
+                if using_hid:
+                    # Mit hid-Paket
+                    data = device.read(64)
+                else:
+                    # Mit hidapi-Paket
+                    try:
+                        data = device.read(64, timeout_ms=100)
+                    except Exception as e:
+                        logger.debug(f"Error reading data: {e}")
+                        time.sleep(0.1)
+                        continue
+
+                # Wenn Daten empfangen wurden, verarbeite sie
                 if data and len(data) > 1:
+                    # Debug-Ausgabe für Datenpakete, falls gewünscht
+                    if args.debug:
+                        logger.debug(f"Received data: {data}")
+                    
                     report_id = data[0]
                     payload = data[1]
+                    
+                    # Erstelle einen eindeutigen Schlüssel für diesen Button
+                    button_key = f"{report_id}:{payload}"
+                    # Initialisiere oder erhöhe den Zähler für diesen Button
+                    button_count[button_key] = button_count.get(button_key, 0) + 1
+                    count = button_count[button_key]
 
                     if report_id == 1:
                         if payload == 0x08:
-                            print("🔊 VOLUME UP pressed")
+                            logger.info(f"🔊 BUTTON: VOLUME UP pressed (count: {count})")
                             os.system("amixer sset Master 5%+")
                         elif payload == 0x10:
-                            print("🔉 VOLUME DOWN pressed")
+                            logger.info(f"🔉 BUTTON: VOLUME DOWN pressed (count: {count})")
                             os.system("amixer sset Master 5%-")
                     elif report_id == 2:
                         if payload == 0x03:
-                            print("📞 PHONE button pressed → triggering WakeWord")
+                            logger.info(f"📞 BUTTON: PHONE button pressed (count: {count}) → triggering WakeWord")
                             send_fake_wakeword()
-
+                        else:
+                            # Log unbekannte Tasten im Report 2
+                            logger.info(f"❓ BUTTON: Unknown button (report_id: {report_id}, payload: {payload:02x}, count: {count})")
+                    else:
+                        # Log alle anderen unbekannten Tasten
+                        logger.info(f"❓ BUTTON: Unknown button (report_id: {report_id}, payload: {payload:02x}, count: {count})")
+                    
+                # Kurze Pause
                 time.sleep(0.05)
+                
             except KeyboardInterrupt:
-                print("\nExiting...")
                 break
             except Exception as e:
-                print("Error during execution:", e)
+                logger.error(f"Error in reading loop: {e}")
                 time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("\nExiting...")
+    except Exception as e:
+        logger.error(f"Error in main loop: {e}")
     finally:
-        # Always close the device when done
-        h.close()
+        # Schließe das Gerät
+        if device:
+            try:
+                if using_hid:
+                    device.close()
+                else:
+                    device.close()
+                logger.info("Device closed")
+            except Exception as e:
+                logger.error(f"Error closing device: {e}")
 
 if __name__ == "__main__":
     main()
