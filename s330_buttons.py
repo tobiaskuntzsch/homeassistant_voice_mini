@@ -119,13 +119,28 @@ def toggle_satellite_state():
             else:
                 logger.error(f"Cancel request failed: HTTP {cancel_response.status_code}")
         else:
-            # Satellite ist inaktiv, sende trigger-wakeword
+            # Satellite ist inaktiv, sende trigger-wake
             logger.info("Satellite is idle, triggering wake word")
-            trigger_response = requests.post(f"{WYOMING_API_BASE_URL}/trigger-wakeword", timeout=2)
-            if trigger_response.status_code == 200:
-                logger.info("Trigger wake word request successful")
-            else:
-                logger.error(f"Trigger wake word request failed: HTTP {trigger_response.status_code}")
+            
+            # Verwende den korrekten Endpunkt aus der Dokumentation
+            try:
+                # POST /api/trigger-wake
+                data = {}  # Leerer Request-Body, wake_word_name ist optional
+                headers = {"Content-Type": "application/json"}
+                
+                trigger_response = requests.post(
+                    f"{WYOMING_API_BASE_URL}/trigger-wake", 
+                    json=data,
+                    headers=headers,
+                    timeout=2
+                )
+                
+                if trigger_response.status_code == 200:
+                    logger.info("Wake word trigger successful")
+                else:
+                    logger.error(f"Wake word trigger failed: HTTP {trigger_response.status_code}")
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Wake word trigger failed: {e}")
     
     except requests.exceptions.RequestException as e:
         logger.error(f"Error communicating with Wyoming Satellite API: {e}")
@@ -134,25 +149,34 @@ def toggle_satellite_state():
 
 
 def force_activate_satellite():
-    """Aktiviert den Wyoming Satellite direkt, ohne Wake-Word-Erkennung (Force Activate).
+    """Aktiviert den Wyoming Satellite direkt, ohne Wake-Word-Erkennung.
     
     Diese Funktion verwendet die Web-API, um den Satellite direkt zu aktivieren.
     (Alias für direkten API-Aufruf, für Kompatibilität mit bestehendem Code)
     """
     try:
-        # Direkte Aktivierung des Satellites über die Web-API
+        # Direkte Aktivierung des Satellites über die Web-API mit trigger-wake
         logger.info("Aktiviere Wyoming Satellite direkt über Web-API")
-        response = requests.post(f"{WYOMING_API_BASE_URL}/force-activate", timeout=2)
+        
+        data = {}  # Leerer Request-Body, wake_word_name ist optional
+        headers = {"Content-Type": "application/json"}
+        
+        response = requests.post(
+            f"{WYOMING_API_BASE_URL}/trigger-wake", 
+            json=data,
+            headers=headers,
+            timeout=2
+        )
         
         if response.status_code == 200:
-            logger.info("Force Activate über Web-API erfolgreich gesendet")
+            logger.info("Satellite Aktivierung erfolgreich")
         else:
-            logger.error(f"Force Activate fehlgeschlagen: HTTP {response.status_code}")
+            logger.error(f"Satellite Aktivierung fehlgeschlagen: HTTP {response.status_code}")
             
     except requests.exceptions.RequestException as e:
         logger.error(f"Fehler bei der Kommunikation mit Wyoming Satellite API: {e}")
     except Exception as e:
-        logger.error(f"Unerwarteter Fehler bei Force Activate: {e}")
+        logger.error(f"Unerwarteter Fehler bei der Satellite Aktivierung: {e}")
 
 def send_wyoming_message(sock, protocol_header, message):
     """Hilfsfunktion zum Senden von Wyoming-Nachrichten"""
