@@ -18,9 +18,9 @@ log_format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s',
 VID = 0x291a
 PID = 0x3308
 
-# WakeWord target: Wyoming Satellite expects WakeWord events on port 10400
+# Wyoming event target: Wyoming Satellite expects events on port 10500
 WYOMING_WAKE_HOST = "127.0.0.1"
-WYOMING_WAKE_PORT = 10400
+WYOMING_WAKE_PORT = 10500  # Geändert von 10400 auf 10500 basierend auf netstat
 
 def get_available_audio_controls():
     """Determines available audio controls for volume adjustment"""
@@ -106,24 +106,29 @@ def send_fake_wakeword(wake_word=None, host=WYOMING_WAKE_HOST, port=WYOMING_WAKE
         # Aus dem Repository: wyoming-satellite verwendet die Detection-Klasse aus wyoming.wake
         # Format: "detection\n{"name":"wake_word_name","timestamp":123456789}"        
         header = b"WYOMING"
-        timestamp = int(time.time() * 1000)  # aktueller Zeitstempel in Millisekunden
-        
-        # Protokoll-Typ: detection mit JSON-Payload
-        detection_json = f"{{\"name\":\"{name}\",\"timestamp\":{timestamp}}}"
-        event_data = f"detection\n{detection_json}".encode("utf-8")
-        
-        # Länge und Paket-Header
-        length = len(event_data).to_bytes(4, byteorder="big")
+        # JSON Format für das Wake-Event
+        json_data = f"{{\"name\":\"{name}\"}}"
+        event_name = f"wake\n{json_data}".encode("utf-8")
+        length = len(event_name).to_bytes(4, byteorder="big")
         reserved = b"\x00" * 4
-        packet = header + length + reserved + event_data
+        packet = header + length + reserved + event_name
 
-        # Sende das Paket
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.sendto(packet, (host, port))
-        logger.info(f"📣 WAKEWORD: Sent wake word detection for \"{name}\" to {host}:{port}")
+        logger.info(f"📣 WAKEWORD: Sent fake wake word \"{name}\" to {host}:{port}")
+        
+        # Falls das erste Format nicht funktioniert, versuche ein alternatives Format
+        # nach kurzer Verzögerung
+        time.sleep(0.1)
+        
+        # Format 2: Einfacheres Format mit nur "wake Name"
+        event_name2 = f"wake {name}\n".encode("utf-8")
+        length2 = len(event_name2).to_bytes(4, byteorder="big")
+        packet2 = header + length2 + reserved + event_name2
+        sock.sendto(packet2, (host, port))
         
     except Exception as e:
-        logger.error(f"Error sending wake word detection: {e}")
+        logger.error(f"Error sending fake wakeword: {e}")
 
 
 def setup_logging(log_level=logging.INFO, log_file=None):
