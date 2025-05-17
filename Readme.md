@@ -73,6 +73,9 @@ sudo python3 s330_buttons.py --wake-word "alexa"
 # Specify audio control for volume buttons
 sudo python3 s330_buttons.py --audio-control "PCM"
 
+# For the Anker PowerConf S330 USB audio device (preferred)
+sudo python3 s330_buttons.py --audio-control "Anker PowerConf S330"
+
 # Write logs to a file
 sudo python3 s330_buttons.py --log-file="/var/log/s330_buttons.log"
 ```
@@ -137,7 +140,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/pi/nabu_mini/s330_buttons.py
+ExecStart=/usr/bin/python3 /home/pi/nabu_mini/s330_buttons.py --audio-control "Anker PowerConf S330"
 WorkingDirectory=/home/pi/nabu_mini
 Restart=always
 RestartSec=1
