@@ -199,8 +199,8 @@ def main():
     parser.add_argument('--log-file', help='Path to log file')
     parser.add_argument('--audio-control', help='Audio mixer control to use (e.g., Master, PCM, Speaker)')
     parser.add_argument('--wake-word', help='Wake word to use when triggering (overrides auto-detection)')
-    parser.add_argument('--wyoming-host', default=WYOMING_WAKE_HOST, help='Wyoming host (default: 127.0.0.1)')
-    parser.add_argument('--wyoming-port', type=int, default=WYOMING_WAKE_PORT, help='Wyoming UDP port (default: 10400)')
+    parser.add_argument('--wyoming-api-host', default=WYOMING_API_HOST, help='Wyoming API host (default: 127.0.0.1)')
+    parser.add_argument('--wyoming-api-port', type=int, default=WYOMING_API_PORT, help='Wyoming API port (default: 8080)')
     args = parser.parse_args()
     
     # Logging einrichten
@@ -288,15 +288,19 @@ def main():
     # Bestimme den zu verwendenden Audio-Mixer-Control
     audio_control = args.audio_control if args.audio_control else get_available_audio_controls()
     
-    # Wyoming-Konfiguration
-    wyoming_host = args.wyoming_host
-    wyoming_port = args.wyoming_port
+    # Wyoming-API-Konfiguration
+    api_host = args.wyoming_api_host
+    api_port = args.wyoming_api_port
     wake_word = args.wake_word
+    
+    # Aktualisiere die globale API-Basis-URL mit den übergebenen Parametern
+    global WYOMING_API_BASE_URL
+    WYOMING_API_BASE_URL = f"http://{api_host}:{api_port}/api"
     
     if wake_word:
         logger.info(f"Using manually specified wake word: {wake_word}")
     
-    logger.info(f"Wyoming configuration: {wyoming_host}:{wyoming_port}")
+    logger.info(f"Wyoming API configuration: {api_host}:{api_port} (URL: {WYOMING_API_BASE_URL})")
     
     # Hauptschleife zum Lesen der Tasten
     try:
