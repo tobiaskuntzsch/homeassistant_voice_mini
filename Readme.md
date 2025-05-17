@@ -230,20 +230,15 @@ sudo systemctl start wyoming-openwake.service
 
 ### Setting up Wyoming Satellite
 
-> **IMPORTANT:** You need a version of Wyoming Satellite that supports the "Force Activate" functionality (PR #144). This feature was added in March 2024 but has not yet been merged into the main repository. It allows direct activation of the satellite without speaking a wake word.
->
-> We need to use the fork from chatziko which already includes this functionality.
+> **IMPORTANT:** We need to use a custom version of Wyoming Satellite with enhanced functionality. This version includes a Web API for controlling the satellite and supports direct activation without speaking a wake word.
 
 ```sh
-# Clone chatziko's Wyoming Satellite repository (includes Force Activate support)
-git clone https://github.com/chatziko/wyoming-satellite.git
+# Clone our custom Wyoming Satellite repository
+git clone https://github.com/tobiaskuntzsch/wyoming-satellite.git
 cd ~/wyoming-satellite
 
 # Ensure you have the latest version
 git pull
-
-# Verify PR #144 is included (should show "Support force activated pipelines" in the log output)
-git log --grep="force activated"
 
 # Setup Wyoming Satellite
 script/setup
@@ -302,6 +297,24 @@ sudo systemctl daemon-reload
 sudo systemctl enable wyoming-satellite.service
 sudo systemctl start wyoming-satellite.service
 ```
+
+### Security Configuration
+
+The Wyoming Satellite has been enhanced with security features for the Force Activate functionality. By default, it uses a secure token that must be provided when activating the satellite without a wake word. 
+
+**Important:** For security reasons, you should change the default security token in both files:
+
+1. In Wyoming Satellite: `/home/pi/wyoming-satellite/wyoming_satellite/satellite.py`
+   ```python
+   # Change this password to your own secure token
+   ACTIVATION_PASSWORD = "nabu-secure-token"
+   ```
+
+2. In the Nabu Button Service: `/home/pi/nabu_mini/s330_buttons.py`
+   ```python
+   # Change this to match the password in the Wyoming Satellite
+   ACTIVATION_PASSWORD = "nabu-secure-token"
+   ```
 
 ## 4. Button Service (nabu-buttons.service)
 

@@ -1,4 +1,3 @@
-import socket
 import os
 import time
 import subprocess
@@ -7,6 +6,7 @@ import json
 import logging
 import datetime
 import argparse
+import requests
 
 # Konfiguriere das Logging
 logger = logging.getLogger("s330_buttons")
@@ -19,9 +19,10 @@ log_format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s',
 VID = 0x291a
 PID = 0x3308
 
-# Wyoming wake target: Wyoming Satellite expects wake events on TCP port 10400
-WYOMING_WAKE_HOST = "127.0.0.1"
-WYOMING_WAKE_PORT = 10500  # Muss TCP verwenden, nicht UDP
+# Wyoming Satellite Web API details
+WYOMING_API_HOST = "127.0.0.1"
+WYOMING_API_PORT = 8080
+WYOMING_API_BASE_URL = f"http://{WYOMING_API_HOST}:{WYOMING_API_PORT}/api"
 
 def get_available_audio_controls():
     """Determines available audio controls for volume adjustment"""
@@ -92,127 +93,66 @@ def get_wakeword_name():
     logger.warning(f"Using default wake word: {default_wake_word}")
     return default_wake_word  # Fallback
 
-def send_fake_wakeword(wake_word=None, host=WYOMING_WAKE_HOST, port=WYOMING_WAKE_PORT):
-    """Sends a complete Wyoming pipeline with WakeWordResult event to the Wyoming Satellite (TCP)
+def toggle_satellite_state():
+    """Schaltet den Wyoming Satellite zwischen den Zuständen um.
     
-    Args:
-        wake_word: Optional wake word to use. If None, will try to detect from running processes.
-        host: Wyoming host to send to
-        port: Wyoming port to send to
+    Wenn der Satellite gerade aktiv ist (hört oder streamt Audio), wird er abgebrochen.
+    Wenn er inaktiv ist, wird ein Wakeword ausgelöst.    
     """
-    # Verwende das übergebene Wake-Word oder versuche, es automatisch zu erkennen
-    name = wake_word if wake_word else get_wakeword_name()
-    
-    # Stelle sicher, dass der Wakeword-Name die Version enthält (wie in real_wakeword.tcpdump)
-    if not "_v" in name:
-        name = f"{name}_v0.1"
-    
-    # Aktuelle Wyoming-Version aus dem real_wakeword.tcpdump
-    wyoming_version = "1.5.4"
-    
     try:
-        # TCP-Socket erstellen und verbinden
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((host, port))
+        # Prüfe den aktuellen Status des Satellites über die Web-API
+        response = requests.get(f"{WYOMING_API_BASE_URL}/status", timeout=2)
+        if response.status_code != 200:
+            logger.error(f"Failed to get satellite status: HTTP {response.status_code}")
+            return
+            
+        status = response.json()
+        logger.debug(f"Current satellite status: {status}")
         
-        # WYOMING-Protokoll Header
-        protocol_header = b"WYOMING"
-        
-        # 1. Schritt: run-pipeline senden
-        send_wyoming_message(sock, protocol_header, {
-            "type": "run-pipeline", 
-            "version": wyoming_version, 
-            "data_length": 125
-        })
-        
-        # 2. Schritt: Pipeline-Konfiguration senden
-        pipeline_config = {
-            "start_stage": "asr", 
-            "end_stage": "tts", 
-            "restart_on_end": False, 
-            "snd_format": {
-                "rate": 16000, 
-                "width": 2, 
-                "channels": 1
-            }
-        }
-        send_wyoming_message(sock, protocol_header, pipeline_config)
-        
-        # 3. Schritt: detection Event senden
-        # Erstelle den Zeitstempel mit der gleichen Genauigkeit wie im TCP-Dump
-        timestamp_ns = int(time.time() * 1000000000)
-        
-        send_wyoming_message(sock, protocol_header, {
-            "type": "detection", 
-            "version": wyoming_version, 
-            "data_length": 55
-        })
-        
-        # 4. Schritt: Wakeword-Details senden
-        detection_data = {
-            "name": name,
-            "timestamp": timestamp_ns
-        }
-        send_wyoming_message(sock, protocol_header, detection_data)
-        
-        # 5. Schritt: streaming-started Event senden
-        send_wyoming_message(sock, protocol_header, {
-            "type": "streaming-started", 
-            "version": wyoming_version
-        })
-        
-        logger.info(f"📣 WAKEWORD: Sent complete wake word pipeline for \"{name}\" (version {wyoming_version}) via TCP to {host}:{port}")
-        sock.close()
-        
-    except ConnectionRefusedError:
-        logger.error(f"Connection to {host}:{port} refused. Is Wyoming Wake service running?")
+        # Entscheide basierend auf dem Status, was zu tun ist
+        if status.get("is_active", False) or status.get("state", "idle") != "idle":
+            # Satellite ist aktiv, sende cancel
+            logger.info("Satellite is active, sending cancel request")
+            cancel_response = requests.post(f"{WYOMING_API_BASE_URL}/cancel", timeout=2)
+            if cancel_response.status_code == 200:
+                logger.info("Cancel request successful")
+            else:
+                logger.error(f"Cancel request failed: HTTP {cancel_response.status_code}")
+        else:
+            # Satellite ist inaktiv, sende trigger-wakeword
+            logger.info("Satellite is idle, triggering wake word")
+            trigger_response = requests.post(f"{WYOMING_API_BASE_URL}/trigger-wakeword", timeout=2)
+            if trigger_response.status_code == 200:
+                logger.info("Trigger wake word request successful")
+            else:
+                logger.error(f"Trigger wake word request failed: HTTP {trigger_response.status_code}")
+    
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error communicating with Wyoming Satellite API: {e}")
     except Exception as e:
-        logger.error(f"Error sending wake word: {e}")
+        logger.error(f"Unexpected error in toggle_satellite_state: {e}")
 
 
-def force_activate_satellite(wake_word=None, host="127.0.0.1", port=10500):
+def force_activate_satellite():
     """Aktiviert den Wyoming Satellite direkt, ohne Wake-Word-Erkennung (Force Activate).
     
-    Diese Funktion sendet ein spezielles force-activate Event an den event_uri Port (10500),
-    das den Satellite direkt aktiviert, ohne dass ein Wake-Word gesprochen werden muss.
-    
-    Args:
-        wake_word: Optional das zu verwendende Wake-Word (nur für Logs)
-        host: Wyoming Server Host
-        port: Wyoming Event Port (standardmäßig 10500)
+    Diese Funktion verwendet die Web-API, um den Satellite direkt zu aktivieren.
+    (Alias für direkten API-Aufruf, für Kompatibilität mit bestehendem Code)
     """
-    # Name des Wake-Words bestimmen (nur für Logging)
-    name = wake_word if wake_word else get_wakeword_name()
-    
-    # Wyoming-Version
-    wyoming_version = "1.5.4"
-    
     try:
-        logger.info(f"Aktiviere Wyoming Satellite direkt (Force Activate) über Event-Port {host}:{port}")
+        # Direkte Aktivierung des Satellites über die Web-API
+        logger.info("Aktiviere Wyoming Satellite direkt über Web-API")
+        response = requests.post(f"{WYOMING_API_BASE_URL}/force-activate", timeout=2)
         
-        # Socket erstellen und verbinden
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((host, port))
-        
-        # WYOMING-Protokoll Header
-        protocol_header = b"WYOMING"
-        
-        # Spezielles force-activate Event senden
-        force_activate_event = {
-            "type": "force-activate",
-            "version": wyoming_version
-        }
-        
-        # Event senden
-        send_wyoming_message(sock, protocol_header, force_activate_event)
-        
-        logger.info(f"Force Activate erfolgreich gesendet - Satellite sollte jetzt im ASR-Modus sein")
-        sock.close()
-        
-    except ConnectionRefusedError:
-        logger.error(f"Verbindung zu {host}:{port} abgelehnt. Läuft der Wyoming-Satellite-Service?")
+        if response.status_code == 200:
+            logger.info("Force Activate über Web-API erfolgreich gesendet")
+        else:
+            logger.error(f"Force Activate fehlgeschlagen: HTTP {response.status_code}")
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Fehler bei der Kommunikation mit Wyoming Satellite API: {e}")
     except Exception as e:
-        logger.error(f"Fehler beim Force Activate des Satellite: {e}")
+        logger.error(f"Unerwarteter Fehler bei Force Activate: {e}")
 
 def send_wyoming_message(sock, protocol_header, message):
     """Hilfsfunktion zum Senden von Wyoming-Nachrichten"""
@@ -430,8 +370,9 @@ def main():
                                 # Alternativ könnten wir hier XF86AudioLowerVolume-Taste simulieren
                     elif report_id == 2:
                         if payload == 0x03:
-                            logger.info(f"📞 BUTTON: PHONE button pressed (count: {count}) → force activating satellite")
-                            force_activate_satellite(wake_word=wake_word, host=wyoming_host, port=wyoming_port)
+                            logger.info(f"📞 BUTTON: PHONE button pressed (count: {count}) → toggling satellite state")
+                            # Verwende die Web-API, um den Satellite zu steuern
+                            toggle_satellite_state()
                         else:
                             # Log unbekannte Tasten im Report 2
                             logger.info(f"❓ BUTTON: Unknown button (report_id: {report_id}, payload: {payload:02x}, count: {count})")
