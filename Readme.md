@@ -100,10 +100,10 @@ The script is configurable with several command line parameters:
 
 ```sh
 # Run the LED service with default settings (1 LED on pin 18)
-sudo python3 neopixel_led_service.py --uri 'tcp://127.0.0.1:10500'
+python3 neopixel_led_service.py --uri 'tcp://127.0.0.1:10500'
 
 # Configure the LED strip parameters
-sudo python3 neopixel_led_service.py --uri 'tcp://127.0.0.1:10500' \
+python3 neopixel_led_service.py --uri 'tcp://127.0.0.1:10500' \
   --num-leds 8 \
   --pin 18 \
   --led-brightness 0.3
@@ -125,37 +125,34 @@ aplay -L | grep -i s330 | grep -i plughw
 
 # Setting Up as Services
 
-## Create Service Files
+## Service Installation Sequence
+
+The services should be set up and started in the following order:
+
+1. **nabu-leds.service** - LED feedback service
+2. **wyoming-openwakeword.service** - Wake word detection (optional)
+3. **wyoming-satellite.service** - Wyoming protocol integration
+4. **nabu-buttons.service** - Anker S330 button service
+
+## 1. LED Service (nabu-leds.service)
+
+### Create Service File
 
 ```sh
-sudo systemctl edit --force --full nabu-buttons.service
 sudo systemctl edit --force --full nabu-leds.service
 ```
 
-### nabu-buttons.service
+Add the following content:
+
 ```ini
 [Unit]
-Description=Anker S330 Button Service
+Description=NeoPixel LEDs Service
+Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/pi/nabu_mini/s330_buttons.py --audio-control "Anker PowerConf S330"
-WorkingDirectory=/home/pi/nabu_mini
-Restart=always
-RestartSec=1
-
-[Install]
-WantedBy=default.target
-```
-
-### nabu-leds.service
-```ini
-[Unit]
-Description=NeoPixel LEDs Service
-
-[Service]
-Type=simple
+User=pi
 ExecStart=/usr/bin/python3 /home/pi/nabu_mini/neopixel_led_service.py --uri 'tcp://127.0.0.1:10500'
 WorkingDirectory=/home/pi/nabu_mini
 Restart=always
@@ -165,43 +162,72 @@ RestartSec=1
 WantedBy=default.target
 ```
 
-## Activate Services
+Enable and start the service:
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable nabu-buttons.service
 sudo systemctl enable nabu-leds.service
-sudo systemctl start nabu-buttons.service
 sudo systemctl start nabu-leds.service
 ```
 
-# Verification
+## 2. Wake Word Service (Optional)
+
+### Setting up Wyoming OpenWakeWord
 
 ```sh
-sudo systemctl status nabu-buttons.service nabu-leds.service
+# Clone the OpenWake repository
+git clone https://github.com/rhasspy/wyoming-openwakeword.git
+cd ~/wyoming-openwakeword
+
+# Setup OpenWake
+script/setup
+
+# Download models (optional)
+script/download-models
+
+# Test available models
+.venv/bin/wyoming-openwakeword --list-models
 ```
 
-# Troubleshooting
+### Create Service File
 
 ```sh
-# View the logs for the button service
-journalctl -u nabu-buttons.service -f
-
-# View the logs for the LED service
-journalctl -u nabu-leds.service -f
+sudo systemctl edit --force --full wyoming-openwake.service
 ```
 
-# Restarting Services
+Add the following content:
+
+```ini
+[Unit]
+Description=Wyoming OpenWakeWord Service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/pi/wyoming-openwakeword/script/run \
+  --uri 'tcp://0.0.0.0:10400' \
+  --preload-model 'ok_nabu' \
+  --threshold 0.8
+WorkingDirectory=/home/pi/wyoming-openwakeword
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=default.target
+```
+
+Enable and start the service:
 
 ```sh
 sudo systemctl daemon-reload
-sudo service nabu-buttons restart
-sudo service nabu-leds restart
+sudo systemctl enable wyoming-openwake.service
+sudo systemctl start wyoming-openwake.service
 ```
 
-# Wyoming Satellite Integration
+## 3. Wyoming Satellite Service
 
-## Setting up Wyoming Satellite
+### Setting up Wyoming Satellite
 
 ```sh
 # Clone the Wyoming Satellite repository
@@ -219,9 +245,7 @@ script/setup
 script/run --help
 ```
 
-## Wyoming Satellite Service Configuration
-
-Create a systemd service file for Wyoming Satellite:
+### Create Service File
 
 ```sh
 sudo systemctl edit --force --full wyoming-satellite.service
@@ -268,48 +292,25 @@ sudo systemctl enable wyoming-satellite.service
 sudo systemctl start wyoming-satellite.service
 ```
 
-## OpenWake Word Service
+## 4. Button Service (nabu-buttons.service)
 
-For local wake word detection, you can set up OpenWake:
-
-```sh
-# Clone the OpenWake repository
-git clone https://github.com/rhasspy/wyoming-openwakeword.git
-cd ~/wyoming-openwakeword
-
-# Setup OpenWake
-script/setup
-
-# Download models (optional)
-script/download-models
-
-# Test available models
-.venv/bin/wyoming-openwakeword --list-models
-```
-
-### OpenWake Service Configuration
-
-Create a systemd service file for OpenWake:
+### Create Service File
 
 ```sh
-sudo systemctl edit --force --full wyoming-openwake.service
+sudo systemctl edit --force --full nabu-buttons.service
 ```
 
 Add the following content:
 
 ```ini
 [Unit]
-Description=Wyoming OpenWakeWord Service
-Wants=network-online.target
-After=network-online.target
+Description=Anker S330 Button Service
+After=network-online.target wyoming-satellite.service
 
 [Service]
 Type=simple
-ExecStart=/home/pi/wyoming-openwakeword/script/run \
-  --uri 'tcp://0.0.0.0:10400' \
-  --preload-model 'ok_nabu' \
-  --threshold 0.8
-WorkingDirectory=/home/pi/wyoming-openwakeword
+ExecStart=/usr/bin/python3 /home/pi/nabu_mini/s330_buttons.py --audio-control "Anker PowerConf S330"
+WorkingDirectory=/home/pi/nabu_mini
 Restart=always
 RestartSec=1
 
@@ -321,8 +322,45 @@ Enable and start the service:
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable wyoming-openwake.service
-sudo systemctl start wyoming-openwake.service
+sudo systemctl enable nabu-buttons.service
+sudo systemctl start nabu-buttons.service
+```
+
+## Verification & Troubleshooting
+
+### Check Service Status
+
+```sh
+# Check all services status
+sudo systemctl status nabu-leds.service wyoming-openwake.service wyoming-satellite.service nabu-buttons.service
+
+# Or check individual services
+sudo systemctl status nabu-buttons.service
+```
+
+### View Service Logs
+
+```sh
+# View the logs for the button service
+journalctl -u nabu-buttons.service -f
+
+# View the logs for the LED service
+journalctl -u nabu-leds.service -f
+
+# View the logs for Wyoming Satellite
+journalctl -u wyoming-satellite.service -f
+```
+
+### Restart Services
+
+If you need to restart services after making changes:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl restart nabu-leds.service
+sudo systemctl restart wyoming-openwake.service
+sudo systemctl restart wyoming-satellite.service
+sudo systemctl restart nabu-buttons.service
 ```
 
 With this setup, the wake word detection happens locally on your Nabu Mini device.
