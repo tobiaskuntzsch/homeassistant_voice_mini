@@ -170,16 +170,16 @@ def send_fake_wakeword(wake_word=None, host=WYOMING_WAKE_HOST, port=WYOMING_WAKE
         logger.error(f"Error sending wake word: {e}")
 
 
-def force_activate_satellite(wake_word=None, host="127.0.0.1", port=10700):
+def force_activate_satellite(wake_word=None, host="127.0.0.1", port=10500):
     """Aktiviert den Wyoming Satellite direkt, ohne Wake-Word-Erkennung (Force Activate).
     
-    Diese Funktion nutzt die in PR #144 implementierte Funktionalität, die es erlaubt,
-    den Satellite direkt in den ASR-Modus zu versetzen.
+    Diese Funktion sendet ein spezielles force-activate Event an den event_uri Port (10500),
+    das den Satellite direkt aktiviert, ohne dass ein Wake-Word gesprochen werden muss.
     
     Args:
         wake_word: Optional das zu verwendende Wake-Word (nur für Logs)
         host: Wyoming Server Host
-        port: Wyoming Server Port (standardmäßig 10700)
+        port: Wyoming Event Port (standardmäßig 10500)
     """
     # Name des Wake-Words bestimmen (nur für Logging)
     name = wake_word if wake_word else get_wakeword_name()
@@ -188,7 +188,7 @@ def force_activate_satellite(wake_word=None, host="127.0.0.1", port=10700):
     wyoming_version = "1.5.4"
     
     try:
-        logger.info(f"Aktiviere Wyoming Satellite direkt (Force Activate) auf {host}:{port}")
+        logger.info(f"Aktiviere Wyoming Satellite direkt (Force Activate) über Event-Port {host}:{port}")
         
         # Socket erstellen und verbinden
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -197,21 +197,14 @@ def force_activate_satellite(wake_word=None, host="127.0.0.1", port=10700):
         # WYOMING-Protokoll Header
         protocol_header = b"WYOMING"
         
-        # Run-Satellite Kommando mit start_stage=asr senden
-        run_satellite_config = {
-            "type": "run-satellite",
-            "version": wyoming_version,
-            "data_length": 37  # Länge der JSON-Daten
+        # Spezielles force-activate Event senden
+        force_activate_event = {
+            "type": "force-activate",
+            "version": wyoming_version
         }
         
-        # RunSatellite Kommando senden
-        send_wyoming_message(sock, protocol_header, run_satellite_config)
-        
-        # RunSatellite Daten mit start_stage=asr senden
-        satellite_data = {
-            "start_stage": "asr"
-        }
-        send_wyoming_message(sock, protocol_header, satellite_data)
+        # Event senden
+        send_wyoming_message(sock, protocol_header, force_activate_event)
         
         logger.info(f"Force Activate erfolgreich gesendet - Satellite sollte jetzt im ASR-Modus sein")
         sock.close()
@@ -438,7 +431,7 @@ def main():
                     elif report_id == 2:
                         if payload == 0x03:
                             logger.info(f"📞 BUTTON: PHONE button pressed (count: {count}) → force activating satellite")
-                            force_activate_satellite(wake_word=wake_word, host=wyoming_host)
+                            force_activate_satellite(wake_word=wake_word, host=wyoming_host, port=wyoming_port)
                         else:
                             # Log unbekannte Tasten im Report 2
                             logger.info(f"❓ BUTTON: Unknown button (report_id: {report_id}, payload: {payload:02x}, count: {count})")
