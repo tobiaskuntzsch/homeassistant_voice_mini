@@ -32,7 +32,7 @@ Raspberry Pi Imager -> Raspberry Pi Zero 2 -> Other -> Raspbian Lite 64-bit
 
 ```sh
 # Clone the nabu_mini repository
-git clone https://gitlab.com/tobiaskuntzsch/nabu_mini.git
+git clone https://github.com/tobiaskuntzsch/nabu_mini.git
 cd nabu_mini
 ```
 
