@@ -169,6 +169,91 @@ def send_fake_wakeword(wake_word=None, host=WYOMING_WAKE_HOST, port=WYOMING_WAKE
     except Exception as e:
         logger.error(f"Error sending wake word: {e}")
 
+
+def send_wyoming_pipeline(wake_word=None, host="127.0.0.1", port=10700):
+    """Sendet eine vollständige Wyoming-Pipeline-Sequenz direkt an den Wyoming-Satellite Server.
+    Diese Funktion umgeht die Wake-Word-Erkennung und simuliert eine vollständige Pipeline.
+    
+    Args:
+        wake_word: Optional das zu verwendende Wake-Word
+        host: Wyoming Server Host
+        port: Wyoming Server Port (standardmäßig 10700, nicht der Wake-Port)
+    """
+    # Name des Wake-Words bestimmen
+    name = wake_word if wake_word else get_wakeword_name()
+    
+    # Stelle sicher, dass der Wakeword-Name die Version enthält
+    if not "_v" in name:
+        name = f"{name}_v0.1"
+    
+    # Aktuelle Wyoming-Version
+    wyoming_version = "1.5.4"
+    
+    try:
+        logger.info(f"Sende Wyoming-Pipeline-Start an {host}:{port}")
+        
+        # Socket erstellen und verbinden
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((host, port))
+        
+        # WYOMING-Protokoll Header
+        protocol_header = b"WYOMING"
+        
+        # 1. RunPipeline Event senden
+        logger.debug("Sende RunPipeline-Event")
+        pipeline_config = {
+            "start_stage": "asr", 
+            "end_stage": "tts", 
+            "restart_on_end": False, 
+            "snd_format": {
+                "rate": 16000, 
+                "width": 2, 
+                "channels": 1
+            }
+        }
+        
+        # RunPipeline
+        send_wyoming_message(sock, protocol_header, {
+            "type": "run-pipeline", 
+            "version": wyoming_version, 
+            "data_length": len(json.dumps(pipeline_config))
+        })
+        
+        # Pipeline-Konfiguration
+        send_wyoming_message(sock, protocol_header, pipeline_config)
+        
+        # 2. Detection Event senden
+        logger.debug("Sende Detection-Event")
+        timestamp_ns = int(time.time() * 1000000000)
+        detection_data = {"name": name, "timestamp": timestamp_ns}
+        
+        send_wyoming_message(sock, protocol_header, {
+            "type": "detection", 
+            "version": wyoming_version, 
+            "data_length": len(json.dumps(detection_data))
+        })
+        
+        # Detection-Daten
+        send_wyoming_message(sock, protocol_header, detection_data)
+        
+        # 3. Streaming-Started Event senden
+        logger.debug("Sende StreamingStarted-Event")
+        send_wyoming_message(sock, protocol_header, {
+            "type": "streaming-started", 
+            "version": wyoming_version
+        })
+        
+        # Warte kurz, um sicherzustellen, dass alle Events verarbeitet wurden
+        time.sleep(0.1)
+        
+        logger.info(f"Wyoming-Pipeline erfolgreich gesendet für Wake-Word: {name}")
+        sock.close()
+        
+    except ConnectionRefusedError:
+        logger.error(f"Verbindung zu {host}:{port} abgelehnt. Läuft der Wyoming-Satellite-Service?")
+    except Exception as e:
+        logger.error(f"Fehler beim Senden der Wyoming-Pipeline: {e}")
+
 def send_wyoming_message(sock, protocol_header, message):
     """Hilfsfunktion zum Senden von Wyoming-Nachrichten"""
     # Konvertiere das Message-Objekt in JSON
