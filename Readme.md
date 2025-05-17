@@ -61,9 +61,29 @@ This script interfaces with the Anker PowerConf S330 device via HID protocol to 
 - Phone button triggers a wake word event for the voice assistant
 
 ```sh
-# Run the button monitoring script
+# Run the button monitoring script with default settings
 sudo python3 s330_buttons.py
+
+# Run with debug logging
+sudo python3 s330_buttons.py --debug
+
+# Specify a custom wake word
+sudo python3 s330_buttons.py --wake-word "alexa"
+
+# Specify audio control for volume buttons
+sudo python3 s330_buttons.py --audio-control "PCM"
+
+# Write logs to a file
+sudo python3 s330_buttons.py --log-file="/var/log/s330_buttons.log"
 ```
+
+Available parameters:
+- `--debug`: Enable detailed debug logging
+- `--log-file`: Path to write log output
+- `--audio-control`: Audio mixer control to use (e.g., Master, PCM, Speaker)
+- `--wake-word`: Wake word to use when triggering (overrides auto-detection)
+- `--wyoming-host`: Wyoming host (default: 127.0.0.1)
+- `--wyoming-port`: Wyoming UDP port (default: 10400)
 
 ### 2. neopixel_led_service.py
 

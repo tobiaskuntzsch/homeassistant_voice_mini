@@ -24,26 +24,39 @@ WYOMING_WAKE_PORT = 10400
 
 def get_available_audio_controls():
     """Determines available audio controls for volume adjustment"""
+    mixer_controls = []
+    
     try:
         # Versuche zuerst, alle verfügbaren Mixer zu bekommen
         out = subprocess.check_output(["amixer", "scontrols"], text=True)
+        logger.debug(f"amixer scontrols output:\n{out}")
+        
         # Suche nach Mustern wie 'Simple mixer control 'Master',0' oder 'Simple mixer control 'PCM',0'
         controls = re.findall(r"Simple mixer control '([^']+)',\d+", out)
+        
         if controls:
-            # Priorisiere Master und PCM als gängige Lautstärkeregler
-            for preferred in ['Master', 'PCM', 'Speaker', 'Headphone']:
-                if preferred in controls:
-                    logger.info(f"Using '{preferred}' audio control for volume adjustment")
-                    return preferred
-            # Falls keiner der bevorzugten gefunden wurde, nimm den ersten verfügbaren
-            logger.info(f"Using '{controls[0]}' audio control for volume adjustment")
-            return controls[0]
+            logger.debug(f"Found audio controls: {controls}")
+            mixer_controls = controls
+        else:
+            logger.warning("No audio controls found in output format we expected")
     except Exception as e:
         logger.error(f"Error finding audio controls: {e}")
     
+    # Priorisiere gängige Namen, wenn sie gefunden wurden
+    if mixer_controls:
+        for preferred in ['Master', 'PCM', 'Speaker', 'Headphone', 'Digital']:
+            if preferred in mixer_controls:
+                logger.info(f"Using '{preferred}' audio control for volume adjustment")
+                return preferred
+        
+        # Wenn keine der bevorzugten gefunden wurde, nehmen wir den ersten
+        first_control = mixer_controls[0]
+        logger.info(f"Using '{first_control}' audio control for volume adjustment")
+        return first_control
+    
     # Fallback auf Master, wenn nichts gefunden wurde
-    logger.warning("No audio controls found, defaulting to 'Master'")
-    return "Master"
+    logger.warning("No audio controls found, audio buttons will be disabled")
+    return None  # Rückgabe von None signalisiert, dass keine Lautstärkeanpassung möglich ist
 
 def get_wakeword_name():
     """Reads the configured WakeWord name from the process arguments"""
@@ -78,9 +91,17 @@ def get_wakeword_name():
     logger.warning(f"Using default wake word: {default_wake_word}")
     return default_wake_word  # Fallback
 
-def send_fake_wakeword():
-    """Sends a WakeWordResult event to the Wyoming Satellite (UDP)"""
-    name = get_wakeword_name()
+def send_fake_wakeword(wake_word=None, host=WYOMING_WAKE_HOST, port=WYOMING_WAKE_PORT):
+    """Sends a WakeWordResult event to the Wyoming Satellite (UDP)
+    
+    Args:
+        wake_word: Optional wake word to use. If None, will try to detect from running processes.
+        host: Wyoming host to send to
+        port: Wyoming port to send to
+    """
+    # Verwende das übergebene Wake-Word oder versuche, es automatisch zu erkennen
+    name = wake_word if wake_word else get_wakeword_name()
+    
     header = b"WYOMING"
     event_name = f"wake  {name}\n".encode("utf-8")
     length = len(event_name).to_bytes(4, byteorder="big")
@@ -88,8 +109,8 @@ def send_fake_wakeword():
     packet = header + length + reserved + event_name
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.sendto(packet, (WYOMING_WAKE_HOST, WYOMING_WAKE_PORT))
-    logger.info(f"📣 WAKEWORD: Sent fake wake word \"{name}\" to {WYOMING_WAKE_HOST}:{WYOMING_WAKE_PORT}")
+    sock.sendto(packet, (host, port))
+    logger.info(f"📣 WAKEWORD: Sent fake wake word \"{name}\" to {host}:{port}")
 
 def setup_logging(log_level=logging.INFO, log_file=None):
     """Konfiguriert das Logging-System"""
@@ -118,6 +139,9 @@ def main():
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     parser.add_argument('--log-file', help='Path to log file')
     parser.add_argument('--audio-control', help='Audio mixer control to use (e.g., Master, PCM, Speaker)')
+    parser.add_argument('--wake-word', help='Wake word to use when triggering (overrides auto-detection)')
+    parser.add_argument('--wyoming-host', default=WYOMING_WAKE_HOST, help='Wyoming host (default: 127.0.0.1)')
+    parser.add_argument('--wyoming-port', type=int, default=WYOMING_WAKE_PORT, help='Wyoming UDP port (default: 10400)')
     args = parser.parse_args()
     
     # Logging einrichten
@@ -205,6 +229,16 @@ def main():
     # Bestimme den zu verwendenden Audio-Mixer-Control
     audio_control = args.audio_control if args.audio_control else get_available_audio_controls()
     
+    # Wyoming-Konfiguration
+    wyoming_host = args.wyoming_host
+    wyoming_port = args.wyoming_port
+    wake_word = args.wake_word
+    
+    if wake_word:
+        logger.info(f"Using manually specified wake word: {wake_word}")
+    
+    logger.info(f"Wyoming configuration: {wyoming_host}:{wyoming_port}")
+    
     # Hauptschleife zum Lesen der Tasten
     try:
         logger.info("Monitoring for button presses...")
@@ -242,30 +276,43 @@ def main():
                     if report_id == 1:
                         if payload == 0x08:
                             logger.info(f"🔊 BUTTON: VOLUME UP pressed (count: {count})")
-                            try:
-                                # Verwende den erkannten Audio-Control
-                                cmd = f"amixer sset {audio_control} 5%+"
-                                logger.debug(f"Running command: {cmd}")
-                                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-                                if result.returncode != 0:
-                                    logger.warning(f"Volume up command failed: {result.stderr}")
-                            except Exception as e:
-                                logger.error(f"Error adjusting volume up: {e}")
+                            if audio_control:
+                                try:
+                                    # Verwende den erkannten Audio-Control
+                                    cmd = f"amixer sset '{audio_control}' 5%+"
+                                    logger.debug(f"Running command: {cmd}")
+                                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                                    if result.returncode != 0:
+                                        logger.warning(f"Volume up command failed: {result.stderr.strip()}")
+                                    else:
+                                        logger.debug(f"Volume up command succeeded: {result.stdout.strip()}")
+                                except Exception as e:
+                                    logger.error(f"Error adjusting volume up: {e}")
+                            else:
+                                logger.warning("Volume UP pressed but no audio control available")
+                                # Alternativ könnten wir hier XF86AudioRaiseVolume-Taste simulieren
+                                # oder einen anderen Weg nutzen, die Lautstärke anzupassen
                         elif payload == 0x10:
                             logger.info(f"🔉 BUTTON: VOLUME DOWN pressed (count: {count})")
-                            try:
-                                # Verwende den erkannten Audio-Control
-                                cmd = f"amixer sset {audio_control} 5%-"
-                                logger.debug(f"Running command: {cmd}")
-                                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-                                if result.returncode != 0:
-                                    logger.warning(f"Volume down command failed: {result.stderr}")
-                            except Exception as e:
-                                logger.error(f"Error adjusting volume down: {e}")
+                            if audio_control:
+                                try:
+                                    # Verwende den erkannten Audio-Control
+                                    cmd = f"amixer sset '{audio_control}' 5%-"
+                                    logger.debug(f"Running command: {cmd}")
+                                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                                    if result.returncode != 0:
+                                        logger.warning(f"Volume down command failed: {result.stderr.strip()}")
+                                    else:
+                                        logger.debug(f"Volume down command succeeded: {result.stdout.strip()}")
+                                except Exception as e:
+                                    logger.error(f"Error adjusting volume down: {e}")
+                            else:
+                                logger.warning("Volume DOWN pressed but no audio control available")
+                                # Alternativ könnten wir hier XF86AudioLowerVolume-Taste simulieren
                     elif report_id == 2:
                         if payload == 0x03:
                             logger.info(f"📞 BUTTON: PHONE button pressed (count: {count}) → triggering WakeWord")
-                            send_fake_wakeword()
+                            send_fake_wakeword(wake_word=wake_word, host=wyoming_host, port=wyoming_port)
                         else:
                             # Log unbekannte Tasten im Report 2
                             logger.info(f"❓ BUTTON: Unknown button (report_id: {report_id}, payload: {payload:02x}, count: {count})")
