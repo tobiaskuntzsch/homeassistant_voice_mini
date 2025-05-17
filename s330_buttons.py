@@ -3,7 +3,7 @@ import os
 import time
 import subprocess
 import re
-import hid  # python-hid package
+import hidapi  # Verwende das System-hidapi-Paket
 
 # USB VID/PID of the Anker PowerConf S330
 VID = 0x291a
@@ -44,40 +44,59 @@ def send_fake_wakeword():
 def main():
     print("Starting button monitoring for Anker PowerConf S330...")
 
+    # Enumerate HID devices to find our Anker S330
+    found = False
     try:
-        dev = hid.device()
-        dev.open(VID, PID)
-        dev.set_nonblocking(True)
+        for device_dict in hidapi.enumerate():
+            if device_dict['vendor_id'] == VID and device_dict['product_id'] == PID:
+                found = True
+                print(f"Found Anker S330 device: {device_dict['product_string']}")
+                break
+        
+        if not found:
+            print(f"Anker S330 device not found (VID: {hex(VID)}, PID: {hex(PID)})")
+            return
+        
+        # Open the device
+        h = hidapi.Device(vendor_id=VID, product_id=PID)
+        print("Device opened successfully")
+        
     except Exception as e:
-        print("Error opening HID device:", e)
+        print("Error setting up HID device:", e)
         return
 
-    while True:
-        try:
-            data = dev.read(64)
-            if data:
-                report_id = data[0]
-                payload = data[1] if len(data) > 1 else 0
+    try:
+        while True:
+            try:
+                # Read data with timeout
+                data = h.read(64, timeout_ms=100)
+                
+                if data and len(data) > 1:
+                    report_id = data[0]
+                    payload = data[1]
 
-                if report_id == 1:
-                    if payload == 0x08:
-                        print("🔊 VOLUME UP pressed")
-                        os.system("amixer sset Master 5%+")
-                    elif payload == 0x10:
-                        print("🔉 VOLUME DOWN pressed")
-                        os.system("amixer sset Master 5%-")
-                elif report_id == 2:
-                    if payload == 0x03:
-                        print("📞 PHONE button pressed → triggering WakeWord")
-                        send_fake_wakeword()
+                    if report_id == 1:
+                        if payload == 0x08:
+                            print("🔊 VOLUME UP pressed")
+                            os.system("amixer sset Master 5%+")
+                        elif payload == 0x10:
+                            print("🔉 VOLUME DOWN pressed")
+                            os.system("amixer sset Master 5%-")
+                    elif report_id == 2:
+                        if payload == 0x03:
+                            print("📞 PHONE button pressed → triggering WakeWord")
+                            send_fake_wakeword()
 
-            time.sleep(0.05)
-        except KeyboardInterrupt:
-            print("\nExiting...")
-            break
-        except Exception as e:
-            print("Error during execution:", e)
-            time.sleep(1)
+                time.sleep(0.05)
+            except KeyboardInterrupt:
+                print("\nExiting...")
+                break
+            except Exception as e:
+                print("Error during execution:", e)
+                time.sleep(1)
+    finally:
+        # Always close the device when done
+        h.close()
 
 if __name__ == "__main__":
     main()
