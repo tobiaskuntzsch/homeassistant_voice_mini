@@ -13,11 +13,28 @@ A smart home solution for voice control using Wyoming protocol with Raspberry Pi
 - [Micro USB auf USB-C Adapter](https://www.amazon.de/dp/B0DYDQRTZT)
 - [USB-C Buchse](https://www.amazon.de/dp/B0CZLD8NKS)
 
+### Wiring Diagram
+
+![Wiring Diagram](wire.png)
+
+The wiring diagram shows the connections between components:
+- The WS2812B LED strip connects to the Raspberry Pi Zero 2's GPIO18 pin for data, and to power/ground
+- The USB-C connector is wired to provide power to the system
+- The Anker S330 connects via USB to the Raspberry Pi (not shown in diagram)
+
 ## Raspberry Pi Image
 Recommended image:
 Raspberry Pi Imager -> Raspberry Pi Zero 2 -> Other -> Raspbian Lite 64-bit
 
 # Installation
+
+## Clone Repository
+
+```sh
+# Clone the nabu_mini repository
+git clone https://gitlab.com/tobiaskuntzsch/nabu_mini.git
+cd nabu_mini
+```
 
 ## Install Dependencies
 
