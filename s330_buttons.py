@@ -18,9 +18,9 @@ log_format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s',
 VID = 0x291a
 PID = 0x3308
 
-# Wyoming event target: Wyoming Satellite expects events on port 10500
+# Wyoming wake target: Wyoming Satellite expects wake events on TCP port 10400
 WYOMING_WAKE_HOST = "127.0.0.1"
-WYOMING_WAKE_PORT = 10500  # Geändert von 10400 auf 10500 basierend auf netstat
+WYOMING_WAKE_PORT = 10500  # Muss TCP verwenden, nicht UDP
 
 def get_available_audio_controls():
     """Determines available audio controls for volume adjustment"""
@@ -92,7 +92,7 @@ def get_wakeword_name():
     return default_wake_word  # Fallback
 
 def send_fake_wakeword(wake_word=None, host=WYOMING_WAKE_HOST, port=WYOMING_WAKE_PORT):
-    """Sends a WakeWordResult event to the Wyoming Satellite (UDP)
+    """Sends a WakeWordResult event to the Wyoming Satellite (TCP)
     
     Args:
         wake_word: Optional wake word to use. If None, will try to detect from running processes.
@@ -103,32 +103,45 @@ def send_fake_wakeword(wake_word=None, host=WYOMING_WAKE_HOST, port=WYOMING_WAKE
     name = wake_word if wake_word else get_wakeword_name()
     
     try:
-        # Aus dem Repository: wyoming-satellite verwendet die Detection-Klasse aus wyoming.wake
-        # Format: "detection\n{"name":"wake_word_name","timestamp":123456789}"        
-        header = b"WYOMING"
-        # JSON Format für das Wake-Event
-        json_data = f"{{\"name\":\"{name}\"}}"
-        event_name = f"wake\n{json_data}".encode("utf-8")
-        length = len(event_name).to_bytes(4, byteorder="big")
-        reserved = b"\x00" * 4
-        packet = header + length + reserved + event_name
+        # TCP-Socket erstellen und verbinden
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((host, port))
+        
+        # Aus dem TCP-Dump: Wir müssen zwei JSON-Objekte senden
+        # 1. Das Header-Objekt mit dem Typ und der Länge der Daten
+        # 2. Das Daten-Objekt mit Namen und Zeitstempel
+        
+        # WYOMING-Protokoll Header
+        protocol_header = b"WYOMING"
+        
+        # Erstelle den Zeitstempel mit der gleichen Genauigkeit wie im TCP-Dump
+        # Es ist ein sehr genauer Zeitstempel in Nanosekunden
+        timestamp_ns = int(time.time() * 1000000000)
 
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(packet, (host, port))
-        logger.info(f"📣 WAKEWORD: Sent fake wake word \"{name}\" to {host}:{port}")
+        # Erstelle das Daten-JSON (2. Paket)
+        data_json = f"{{\"name\":\"{name}\",\"timestamp\":{timestamp_ns}}}"
+        data_bytes = data_json.encode("utf-8")
         
-        # Falls das erste Format nicht funktioniert, versuche ein alternatives Format
-        # nach kurzer Verzögerung
-        time.sleep(0.1)
+        # Erstelle das Header-JSON (1. Paket)
+        header_json = f"{{\"type\": \"detection\", \"version\": \"1.4.1\", \"data_length\": {len(data_bytes)}}}"
+        event_data = f"{header_json}\n{data_json}".encode("utf-8")
         
-        # Format 2: Einfacheres Format mit nur "wake Name"
-        event_name2 = f"wake {name}\n".encode("utf-8")
-        length2 = len(event_name2).to_bytes(4, byteorder="big")
-        packet2 = header + length2 + reserved + event_name2
-        sock.sendto(packet2, (host, port))
+        # Länge und reservierte Bytes im WYOMING-Protokoll
+        length = len(event_data).to_bytes(4, byteorder="big")
+        reserved = b"\x00" * 4
         
+        # Paket zusammensetzen
+        packet = protocol_header + length + reserved + event_data
+        
+        # Daten senden
+        sock.sendall(packet)
+        logger.info(f"📣 WAKEWORD: Sent wake word detection for \"{name}\" (version 1.4.1) via TCP to {host}:{port}")
+        sock.close()
+        
+    except ConnectionRefusedError:
+        logger.error(f"Connection to {host}:{port} refused. Is Wyoming Wake service running?")
     except Exception as e:
-        logger.error(f"Error sending fake wakeword: {e}")
+        logger.error(f"Error sending wake word: {e}")
 
 
 def setup_logging(log_level=logging.INFO, log_file=None):
