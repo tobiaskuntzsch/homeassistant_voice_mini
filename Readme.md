@@ -1,6 +1,6 @@
-# Nabu Mini
+# HomeAssistant Voice Mini
 
-![Nabu Mini Device](IMG_4440.jpg)
+![HomeAssistant Voice Mini Device](IMG_4440.jpg)
 
 A smart home solution for voice control using Wyoming protocol with Raspberry Pi and Anker PowerConf S330.
 
@@ -33,9 +33,9 @@ Raspberry Pi Imager -> Raspberry Pi Zero 2 -> Other -> Raspbian Lite 64-bit
 ## Clone Repository
 
 ```sh
-# Clone the nabu_mini repository
-git clone https://github.com/tobiaskuntzsch/nabu_mini.git
-cd nabu_mini
+# Clone the homeassistant_voice_mini repository
+git clone https://github.com/tobiaskuntzsch/homeassistant_voice_mini.git
+cd homeassistant_voice_mini
 ```
 
 ## Install Dependencies
@@ -129,17 +129,17 @@ aplay -L | grep -i s330 | grep -i plughw
 
 The services should be set up and started in the following order:
 
-1. **nabu-leds.service** - LED feedback service
+1. **homeassistant-voice-mini-leds.service** - LED feedback service
 2. **wyoming-openwakeword.service** - Wake word detection (optional)
 3. **wyoming-satellite.service** - Wyoming protocol integration
-4. **nabu-buttons.service** - Anker S330 button service
+4. **homeassistant-voice-mini-buttons.service** - Anker S330 button service
 
-## 1. LED Service (nabu-leds.service)
+## 1. LED Service (homeassistant-voice-mini-leds.service)
 
 ### Create Service File
 
 ```sh
-sudo systemctl edit --force --full nabu-leds.service
+sudo systemctl edit --force --full homeassistant-voice-mini-leds.service
 ```
 
 Add the following content:
@@ -152,8 +152,8 @@ After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/pi/nabu_mini/neopixel_led_service.py --uri 'tcp://127.0.0.1:10500'
-WorkingDirectory=/home/pi/nabu_mini
+ExecStart=/usr/bin/python3 /home/pi/homeassistant_voice_mini/neopixel_led_service.py --uri 'tcp://127.0.0.1:10500'
+WorkingDirectory=/home/pi/homeassistant_voice_mini
 Restart=always
 RestartSec=1
 
@@ -165,8 +165,8 @@ Enable and start the service:
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable nabu-leds.service
-sudo systemctl start nabu-leds.service
+sudo systemctl enable homeassistant-voice-mini-leds.service
+sudo systemctl start homeassistant-voice-mini-leds.service
 ```
 
 ## 2. Wake Word Service (Optional)
@@ -208,7 +208,7 @@ After=network-online.target
 Type=simple
 ExecStart=/home/pi/wyoming-openwakeword/script/run \
   --uri 'tcp://0.0.0.0:10400' \
-  --preload-model 'ok_nabu' \
+  --preload-model 'ok_homeassistant_voice_mini' \
   --threshold 0.8
 WorkingDirectory=/home/pi/wyoming-openwakeword
 Restart=always
@@ -264,19 +264,19 @@ Add the following content:
 Description=Wyoming Satellite
 Wants=network-online.target
 After=network-online.target
-Requires=nabu-leds.service
+Requires=homeassistant-voice-mini-leds.service
 
 [Service]
 Type=simple
 ExecStart=/home/pi/wyoming-satellite/script/run \
-  --name 'Nabu Mini <ROOM NAME>' \
+  --name 'HomeAssistant Voice Mini <ROOM NAME>' \
   --uri 'tcp://0.0.0.0:10700' \
   --mic-command 'arecord -D plughw:CARD=S330,DEV=0 -r 16000 -c 1 -f S16_LE -t raw' \
   --snd-command 'aplay -D plughw:CARD=S330,DEV=0 -r 16000 -c 1 -f S16_LE -t raw' \
   --mic-auto-gain 7 \
   --mic-noise-suppression 3 \
   --wake-uri 'tcp://127.0.0.1:10400' \
-  --wake-word-name 'ok_nabu' \
+  --wake-word-name 'ok_homeassistant_voice_mini' \
   --event-uri 'tcp://127.0.0.1:10500' \
   --snd-command-rate 16000 \
   --snd-volume-multiplier 0.2 \
@@ -307,21 +307,21 @@ The Wyoming Satellite has been enhanced with security features for the Force Act
 1. In Wyoming Satellite: `/home/pi/wyoming-satellite/wyoming_satellite/satellite.py`
    ```python
    # Change this password to your own secure token
-   ACTIVATION_PASSWORD = "nabu-secure-token"
+   ACTIVATION_PASSWORD = "homeassistant-voice-mini-secure-token"
    ```
 
-2. In the Nabu Button Service: `/home/pi/nabu_mini/s330_buttons.py`
+2. In the HomeAssistant Voice Mini Button Service: `/home/pi/homeassistant_voice_mini/s330_buttons.py`
    ```python
    # Change this to match the password in the Wyoming Satellite
-   ACTIVATION_PASSWORD = "nabu-secure-token"
+   ACTIVATION_PASSWORD = "homeassistant-voice-mini-secure-token"
    ```
 
-## 4. Button Service (nabu-buttons.service)
+## 4. Button Service (homeassistant-voice-mini-buttons.service)
 
 ### Create Service File
 
 ```sh
-sudo systemctl edit --force --full nabu-buttons.service
+sudo systemctl edit --force --full homeassistant-voice-mini-buttons.service
 ```
 
 Add the following content:
@@ -333,8 +333,8 @@ After=network-online.target wyoming-satellite.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/pi/nabu_mini/s330_buttons.py --audio-control "Anker PowerConf S330"
-WorkingDirectory=/home/pi/nabu_mini
+ExecStart=/usr/bin/python3 /home/pi/homeassistant_voice_mini/s330_buttons.py --audio-control "Anker PowerConf S330"
+WorkingDirectory=/home/pi/homeassistant_voice_mini
 Restart=always
 RestartSec=1
 
@@ -346,8 +346,8 @@ Enable and start the service:
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable nabu-buttons.service
-sudo systemctl start nabu-buttons.service
+sudo systemctl enable homeassistant-voice-mini-buttons.service
+sudo systemctl start homeassistant-voice-mini-buttons.service
 ```
 
 ## Verification & Troubleshooting
@@ -356,20 +356,20 @@ sudo systemctl start nabu-buttons.service
 
 ```sh
 # Check all services status
-sudo systemctl status nabu-leds.service wyoming-openwake.service wyoming-satellite.service nabu-buttons.service
+sudo systemctl status homeassistant-voice-mini-leds.service wyoming-openwake.service wyoming-satellite.service homeassistant-voice-mini-buttons.service
 
 # Or check individual services
-sudo systemctl status nabu-buttons.service
+sudo systemctl status homeassistant-voice-mini-buttons.service
 ```
 
 ### View Service Logs
 
 ```sh
 # View the logs for the button service
-journalctl -u nabu-buttons.service -f
+journalctl -u homeassistant-voice-mini-buttons.service -f
 
 # View the logs for the LED service
-journalctl -u nabu-leds.service -f
+journalctl -u homeassistant-voice-mini-leds.service -f
 
 # View the logs for Wyoming Satellite
 journalctl -u wyoming-satellite.service -f
@@ -381,24 +381,24 @@ If you need to restart services after making changes:
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl restart nabu-leds.service
+sudo systemctl restart homeassistant-voice-mini-leds.service
 sudo systemctl restart wyoming-openwake.service
 sudo systemctl restart wyoming-satellite.service
-sudo systemctl restart nabu-buttons.service
+sudo systemctl restart homeassistant-voice-mini-buttons.service
 ```
 
-With this setup, the wake word detection happens locally on your Nabu Mini device.
+With this setup, the wake word detection happens locally on your HomeAssistant Voice Mini device.
 
 To use a remote wake word service instead, modify the `--wake-uri` in the Wyoming Satellite service to point to your remote server.
 
 # 3D Printed Case
 
-The Nabu Mini comes with 3D printable case files to create a nice enclosure for your device.
+The HomeAssistant Voice Mini comes with 3D printable case files to create a nice enclosure for your device.
 
 ## 3D Models
 
-- [Nabu Mini - Body (V5)](NabuMini%20-%20Body%20-%20V5.stl) - The main enclosure
-- [Nabu Mini - Window (V1)](NabuMini%20-%20Window%20-%20V1.stl) - Transparent window part
+- [HomeAssistant Voice Mini - Body (V5)](HomeAssistantVoiceMini%20-%20Body%20-%20V5.stl) - The main enclosure
+- [HomeAssistant Voice Mini - Window (V1)](HomeAssistantVoiceMini%20-%20Window%20-%20V1.stl) - Transparent window part
 
 ## Printing Recommendations
 
