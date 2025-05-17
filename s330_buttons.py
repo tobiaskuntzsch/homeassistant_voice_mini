@@ -3,6 +3,7 @@ import os
 import time
 import subprocess
 import re
+import json
 import logging
 import datetime
 import argparse
@@ -92,7 +93,7 @@ def get_wakeword_name():
     return default_wake_word  # Fallback
 
 def send_fake_wakeword(wake_word=None, host=WYOMING_WAKE_HOST, port=WYOMING_WAKE_PORT):
-    """Sends a WakeWordResult event to the Wyoming Satellite (TCP)
+    """Sends a complete Wyoming pipeline with WakeWordResult event to the Wyoming Satellite (TCP)
     
     Args:
         wake_word: Optional wake word to use. If None, will try to detect from running processes.
@@ -102,46 +103,87 @@ def send_fake_wakeword(wake_word=None, host=WYOMING_WAKE_HOST, port=WYOMING_WAKE
     # Verwende das übergebene Wake-Word oder versuche, es automatisch zu erkennen
     name = wake_word if wake_word else get_wakeword_name()
     
+    # Stelle sicher, dass der Wakeword-Name die Version enthält (wie in real_wakeword.tcpdump)
+    if not "_v" in name:
+        name = f"{name}_v0.1"
+    
+    # Aktuelle Wyoming-Version aus dem real_wakeword.tcpdump
+    wyoming_version = "1.5.4"
+    
     try:
         # TCP-Socket erstellen und verbinden
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((host, port))
         
-        # Aus dem TCP-Dump: Wir müssen zwei JSON-Objekte senden
-        # 1. Das Header-Objekt mit dem Typ und der Länge der Daten
-        # 2. Das Daten-Objekt mit Namen und Zeitstempel
-        
         # WYOMING-Protokoll Header
         protocol_header = b"WYOMING"
         
+        # 1. Schritt: run-pipeline senden
+        send_wyoming_message(sock, protocol_header, {
+            "type": "run-pipeline", 
+            "version": wyoming_version, 
+            "data_length": 125
+        })
+        
+        # 2. Schritt: Pipeline-Konfiguration senden
+        pipeline_config = {
+            "start_stage": "asr", 
+            "end_stage": "tts", 
+            "restart_on_end": False, 
+            "snd_format": {
+                "rate": 16000, 
+                "width": 2, 
+                "channels": 1
+            }
+        }
+        send_wyoming_message(sock, protocol_header, pipeline_config)
+        
+        # 3. Schritt: detection Event senden
         # Erstelle den Zeitstempel mit der gleichen Genauigkeit wie im TCP-Dump
-        # Es ist ein sehr genauer Zeitstempel in Nanosekunden
         timestamp_ns = int(time.time() * 1000000000)
-
-        # Erstelle das Daten-JSON (2. Paket)
-        data_json = f"{{\"name\":\"{name}\",\"timestamp\":{timestamp_ns}}}"
-        data_bytes = data_json.encode("utf-8")
         
-        # Erstelle das Header-JSON (1. Paket)
-        header_json = f"{{\"type\": \"detection\", \"version\": \"1.4.1\", \"data_length\": {len(data_bytes)}}}"
-        event_data = f"{header_json}\n{data_json}".encode("utf-8")
+        send_wyoming_message(sock, protocol_header, {
+            "type": "detection", 
+            "version": wyoming_version, 
+            "data_length": 55
+        })
         
-        # Länge und reservierte Bytes im WYOMING-Protokoll
-        length = len(event_data).to_bytes(4, byteorder="big")
-        reserved = b"\x00" * 4
+        # 4. Schritt: Wakeword-Details senden
+        detection_data = {
+            "name": name,
+            "timestamp": timestamp_ns
+        }
+        send_wyoming_message(sock, protocol_header, detection_data)
         
-        # Paket zusammensetzen
-        packet = protocol_header + length + reserved + event_data
+        # 5. Schritt: streaming-started Event senden
+        send_wyoming_message(sock, protocol_header, {
+            "type": "streaming-started", 
+            "version": wyoming_version
+        })
         
-        # Daten senden
-        sock.sendall(packet)
-        logger.info(f"📣 WAKEWORD: Sent wake word detection for \"{name}\" (version 1.4.1) via TCP to {host}:{port}")
+        logger.info(f"📣 WAKEWORD: Sent complete wake word pipeline for \"{name}\" (version {wyoming_version}) via TCP to {host}:{port}")
         sock.close()
         
     except ConnectionRefusedError:
         logger.error(f"Connection to {host}:{port} refused. Is Wyoming Wake service running?")
     except Exception as e:
         logger.error(f"Error sending wake word: {e}")
+
+def send_wyoming_message(sock, protocol_header, message):
+    """Hilfsfunktion zum Senden von Wyoming-Nachrichten"""
+    # Konvertiere das Message-Objekt in JSON
+    data_json = json.dumps(message)
+    data_bytes = data_json.encode("utf-8")
+    
+    # Länge und reservierte Bytes im WYOMING-Protokoll
+    length = len(data_bytes).to_bytes(4, byteorder="big")
+    reserved = b"\x00" * 4
+    
+    # Paket zusammensetzen
+    packet = protocol_header + length + reserved + data_bytes
+    
+    # Daten senden
+    sock.sendall(packet)
 
 
 def setup_logging(log_level=logging.INFO, log_file=None):
