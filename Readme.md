@@ -49,7 +49,10 @@ sudo apt-get install --no-install-recommends git python3-dev libopenblas-dev bui
 sudo apt-get install --no-install-recommends python3-hidapi python3-rpi.gpio python3-pip -y
 
 # Python packages only available via pip
-sudo pip3 install adafruit-circuitpython-neopixel adafruit-blinka wyoming wyoming-satellite hid --break-system-packages
+sudo pip3 install adafruit-circuitpython-neopixel adafruit-blinka wyoming wyoming-satellite --break-system-packages
+
+# Correct HID package for S330 buttons
+sudo pip3 install hidapi --break-system-packages
 
 
 # Optional audio processing packages

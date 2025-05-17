@@ -1,4 +1,4 @@
-import hid
+import hidapi as hid
 import socket
 import os
 import time
