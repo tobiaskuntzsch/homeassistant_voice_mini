@@ -168,6 +168,7 @@ Enable and start the service:
 sudo systemctl daemon-reload
 sudo systemctl enable homeassistant-voice-mini-leds.service
 sudo systemctl start homeassistant-voice-mini-leds.service
+sudo systemctl status homeassistant-voice-mini-leds.service
 ```
 
 ## 2. Wake Word Service (Optional)
@@ -225,6 +226,7 @@ Enable and start the service:
 sudo systemctl daemon-reload
 sudo systemctl enable wyoming-openwake.service
 sudo systemctl start wyoming-openwake.service
+sudo systemctl status wyoming-openwake.service
 ```
 
 ## 3. Wyoming Satellite Service
@@ -299,6 +301,7 @@ Enable and start the service:
 sudo systemctl daemon-reload
 sudo systemctl enable wyoming-satellite.service
 sudo systemctl start wyoming-satellite.service
+sudo systemctl status wyoming-satellite.service
 ```
 
 
@@ -334,6 +337,7 @@ Enable and start the service:
 sudo systemctl daemon-reload
 sudo systemctl enable homeassistant-voice-mini-buttons.service
 sudo systemctl start homeassistant-voice-mini-buttons.service
+sudo systemctl status homeassistant-voice-mini-buttons.service
 ```
 
 ## Verification & Troubleshooting
