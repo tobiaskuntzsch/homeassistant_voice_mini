@@ -101,10 +101,10 @@ The script is configurable with several command line parameters:
 
 ```sh
 # Run the LED service with default settings (1 LED on pin 18)
-python3 neopixel_led_service.py --uri 'tcp://127.0.0.1:10500'
+sudo python3 neopixel_led_service.py --uri 'tcp://127.0.0.1:10500'
 
 # Configure the LED strip parameters
-python3 neopixel_led_service.py --uri 'tcp://127.0.0.1:10500' \
+sudo python3 neopixel_led_service.py --uri 'tcp://127.0.0.1:10500' \
   --num-leds 8 \
   --pin 18 \
   --led-brightness 0.3
@@ -237,6 +237,7 @@ sudo systemctl status wyoming-openwake.service
 
 ```sh
 # Clone our custom Wyoming Satellite repository
+cd $HOME
 git clone https://github.com/tobiaskuntzsch/wyoming-satellite.git
 cd ~/wyoming-satellite
 
