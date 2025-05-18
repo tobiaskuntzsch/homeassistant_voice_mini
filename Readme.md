@@ -278,7 +278,7 @@ ExecStart=/home/pi/wyoming-satellite/script/run \
   --mic-auto-gain 7 \
   --mic-noise-suppression 3 \
   --wake-uri 'tcp://127.0.0.1:10400' \
-  --wake-word-name 'ok_homeassistant_voice_mini' \
+  --wake-word-name 'ok_nabu' \
   --event-uri 'tcp://127.0.0.1:10500' \
   --snd-command-rate 16000 \
   --snd-volume-multiplier 0.2 \
@@ -342,7 +342,7 @@ sudo systemctl start homeassistant-voice-mini-buttons.service
 
 ```sh
 # Check all services status
-sudo systemctl status homeassistant-voice-mini-leds.service wyoming-openwake.service wyoming-satellite.service homeassistant-voice-mini-buttons.service
+sudo systemctl status homeassistant-voice-mini-leds.service wyoming-satellite.service homeassistant-voice-mini-buttons.service
 
 # Or check individual services
 sudo systemctl status homeassistant-voice-mini-buttons.service
